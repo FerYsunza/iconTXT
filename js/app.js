@@ -4,6 +4,8 @@
   const MAX_TEXT_WIDTH_RATIO = 0.86;
   const MIN_FONT_SIZE = 40;
   const MAX_FONT_SIZE = 700;
+  const MIN_LINE_HEIGHT = 0.8;
+  const MAX_LINE_HEIGHT = 2;
 
   const els = {
     canvas: document.getElementById("iconCanvas"),
@@ -13,6 +15,8 @@
     fontFamily: document.getElementById("fontFamily"),
     fontSize: document.getElementById("fontSize"),
     fontSizeValue: document.getElementById("fontSizeValue"),
+    lineHeight: document.getElementById("lineHeight"),
+    lineHeightValue: document.getElementById("lineHeightValue"),
     isBold: document.getElementById("isBold"),
     isItalic: document.getElementById("isItalic"),
     textAlign: document.getElementById("textAlign"),
@@ -48,6 +52,7 @@
 
   function getState() {
     const fontSize = clamp(Number(els.fontSize.value), MIN_FONT_SIZE, MAX_FONT_SIZE);
+    const lineHeight = clamp(Number(els.lineHeight.value), MIN_LINE_HEIGHT, MAX_LINE_HEIGHT);
 
     return {
       text: els.text.value,
@@ -55,6 +60,7 @@
       fontColor: els.fontColor.value,
       fontFamily: els.fontFamily.value,
       fontSize,
+      lineHeight,
       isBold: els.isBold.checked,
       isItalic: els.isItalic.checked,
       textAlign: els.textAlign.value,
@@ -73,12 +79,60 @@
     return (percent / 100) * CANVAS_SIZE;
   }
 
+  function trimBoundaryEmptyLines(lines) {
+    let start = 0;
+    let end = lines.length - 1;
+
+    while (start <= end && lines[start].trim() === "") {
+      start += 1;
+    }
+
+    while (end >= start && lines[end].trim() === "") {
+      end -= 1;
+    }
+
+    return start > end ? [] : lines.slice(start, end + 1);
+  }
+
+  function getContentLines(rawText) {
+    const normalized = rawText.replace(/\r\n?/g, "\n");
+    return trimBoundaryEmptyLines(normalized.split("\n"));
+  }
+
+  function measureTextBlock(state, lines, fontSize) {
+    ctx.font = resolveFontString({ ...state, fontSize });
+
+    const widths = lines.map((line) => (line ? ctx.measureText(line).width : 0));
+    const maxWidth = widths.length ? Math.max(...widths) : 0;
+    const lineAdvance = fontSize * state.lineHeight;
+    const height = lineAdvance * lines.length;
+
+    return { maxWidth, lineAdvance, height };
+  }
+
+  function fitFontSizeToSafeArea(state, lines, requestedSize) {
+    const safeSize = CANVAS_SIZE * MAX_TEXT_WIDTH_RATIO;
+    let size = requestedSize;
+    let measurement = measureTextBlock(state, lines, size);
+
+    while (
+      size > MIN_FONT_SIZE
+      && (measurement.maxWidth > safeSize || measurement.height > safeSize)
+    ) {
+      size -= 1;
+      measurement = measureTextBlock(state, lines, size);
+    }
+
+    return { fontSize: size, measurement, hitMin: size === MIN_FONT_SIZE };
+  }
+
   function drawIcon() {
     const state = getState();
-    const maxTextWidth = CANVAS_SIZE * MAX_TEXT_WIDTH_RATIO;
 
     els.fontSize.value = String(state.fontSize);
     els.fontSizeValue.value = `${state.fontSize} px`;
+    els.lineHeight.value = String(state.lineHeight);
+    els.lineHeightValue.value = state.lineHeight.toFixed(2);
     els.positionXValue.value = `${state.positionX}%`;
     els.positionYValue.value = `${state.positionY}%`;
 
@@ -89,40 +143,40 @@
     ctx.fillStyle = state.backgroundColor;
     ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
-    const text = state.text.trim();
-    if (!text) {
+    const lines = getContentLines(state.text);
+    if (lines.length === 0) {
       els.warning.textContent = "Text is empty. Export will include only the background color.";
       ctx.restore();
       return;
     }
 
-    let computedSize = state.fontSize;
-    ctx.font = resolveFontString({ ...state, fontSize: computedSize });
-    let measuredWidth = ctx.measureText(text).width;
-
-    if (measuredWidth > maxTextWidth) {
-      const ratio = maxTextWidth / measuredWidth;
-      computedSize = clamp(Math.floor(computedSize * ratio), MIN_FONT_SIZE, state.fontSize);
-      ctx.font = resolveFontString({ ...state, fontSize: computedSize });
-      measuredWidth = ctx.measureText(text).width;
-      els.warning.textContent = "Text was auto-scaled to fit the icon width.";
-    } else {
-      els.warning.textContent = "";
-    }
+    const { fontSize: computedSize, measurement, hitMin } = fitFontSizeToSafeArea(state, lines, state.fontSize);
+    const safeSize = CANVAS_SIZE * MAX_TEXT_WIDTH_RATIO;
+    const needsFit = computedSize < state.fontSize;
+    const stillOverflows = measurement.maxWidth > safeSize || measurement.height > safeSize;
 
     ctx.fillStyle = state.fontColor;
-    ctx.textBaseline = "middle";
+    ctx.textBaseline = "top";
     ctx.textAlign = state.textAlign;
     ctx.font = resolveFontString({ ...state, fontSize: computedSize });
 
     const x = getPositionPx(state.positionX);
-    const y = getPositionPx(state.positionY);
+    const centerY = getPositionPx(state.positionY);
+    const firstLineY = centerY - (measurement.height / 2);
 
-    if (measuredWidth > maxTextWidth && computedSize === MIN_FONT_SIZE) {
-      els.warning.textContent = "Text is very long and may still appear tight at minimum font size.";
+    if (stillOverflows && hitMin) {
+      els.warning.textContent = "Text hit minimum font size and may still overflow the safe area.";
+    } else if (needsFit) {
+      els.warning.textContent = "Text block was auto-scaled to fit the safe area.";
+    } else {
+      els.warning.textContent = "";
     }
 
-    ctx.fillText(text, x, y);
+    lines.forEach((line, index) => {
+      const y = firstLineY + (index * measurement.lineAdvance);
+      ctx.fillText(line, x, y);
+    });
+
     ctx.restore();
   }
 
@@ -142,6 +196,7 @@
       els.fontColor,
       els.fontFamily,
       els.fontSize,
+      els.lineHeight,
       els.isBold,
       els.isItalic,
       els.textAlign,

@@ -27,7 +27,7 @@
 
       <div class="control-group">
         <label for="iconText">Text</label>
-        <input id="iconText" name="iconText" type="text" maxlength="20" value="MyApp" placeholder="Enter icon text">
+        <textarea id="iconText" name="iconText" rows="3" placeholder="Enter icon text (press Enter for new lines)">MyApp</textarea>
       </div>
 
       <div class="control-row">
@@ -58,6 +58,14 @@
           <output id="fontSizeValue" for="fontSize">320 px</output>
         </div>
         <input id="fontSize" name="fontSize" type="range" min="40" max="700" step="2" value="320">
+      </div>
+
+      <div class="control-group">
+        <div class="label-row">
+          <label for="lineHeight">Line Height</label>
+          <output id="lineHeightValue" for="lineHeight">1.10</output>
+        </div>
+        <input id="lineHeight" name="lineHeight" type="range" min="0.8" max="2" step="0.05" value="1.1">
       </div>
 
       <div class="control-row toggles">
